@@ -524,7 +524,7 @@ for (genvar i = 0; i < 2; i++)
    #(.width_p($bits(bp_cce_mem_msg_s)))
    resp_fifo
     (.clk_i(clk_i)
-     ,.reset_i(reset_i)
+     ,.reset_i(reset_r)
 
      ,.data_i(mem_resp_selected_li)
      ,.v_i(mem_resp_selected_v_li)
@@ -541,29 +541,99 @@ for (genvar i = 0; i < 2; i++)
   logic dma_mem_resp_v_li, dma_mem_resp_ready_lo, dma_mem_resp_yumi_lo;
   if (l2_en_p)
     begin : l2s
+      bsg_counter_clock_downsample
+       #(.width_p(1))
+       downsample
+        (.clk_i(clk_i)
+         ,.reset_i(reset_r)
+         ,.val_i(1'b1)
+         ,.clk_r_o(clk_2x)
+         );
+      wire clk_2x = clk_i;
+
+      logic cache_mem_cmd_v_li_2x, cache_mem_cmd_ready_lo_2x;
+      bsg_fifo_periodic
+       #(.a_period_p(1), .b_period_p(2))
+       mem_cmd_in_divide
+        (.a_clk_i(clk_i)
+         ,.a_reset_i(reset_r)
+         ,.a_v_i(cache_mem_cmd_v_li)
+         ,.a_ready_and_o(cache_mem_cmd_ready_lo)
+
+         ,.b_clk_i(clk_i)
+         ,.b_reset_i(reset_r)
+         ,.b_v_o(cache_mem_cmd_v_li_2x)
+         ,.b_ready_and_i(cache_mem_cmd_ready_lo_2x)
+         );
+
+      logic cache_mem_resp_v_lo_2x, cache_mem_resp_ready_li_2x;
+      bsg_fifo_periodic
+       #(.a_period_p(2), .b_period_p(1))
+       mem_resp_out_divide
+        (.a_clk_i(clk_2x)
+         ,.a_reset_i(reset_r)
+         ,.a_v_i(cache_mem_resp_v_lo_2x)
+         ,.a_ready_and_o(cache_mem_resp_ready_li_2x)
+
+         ,.b_clk_i(clk_i)
+         ,.b_reset_i(reset_r)
+         ,.b_v_o(cache_mem_resp_v_lo)
+         ,.b_ready_and_i(cache_mem_resp_yumi_li)
+         );
+
+      logic dma_mem_cmd_v_lo_2x, dma_mem_cmd_ready_li_2x;
+      bsg_fifo_periodic
+       #(.a_period_p(2), .b_period_p(1))
+       dma_cmd_out_divide
+        (.a_clk_i(clk_2x)
+         ,.a_reset_i(reset_r)
+         ,.a_v_i(dma_mem_cmd_v_lo_2x)
+         ,.a_ready_and_o(dma_mem_cmd_ready_li_2x)
+
+         ,.b_clk_i(clk_i)
+         ,.b_reset_i(reset_r)
+         ,.b_v_o(dma_mem_cmd_v_lo)
+         ,.b_ready_and_i(dma_mem_cmd_yumi_li)
+         );
+
+      logic dma_mem_resp_v_li_2x, dma_mem_resp_ready_lo_2x;
+      bsg_fifo_periodic
+       #(.a_period_p(1), .b_period_p(2))
+       dma_resp_in_divide
+        (.a_clk_i(clk_i)
+         ,.a_reset_i(reset_r)
+         ,.a_v_i(dma_mem_resp_v_li)
+         ,.a_ready_and_o(dma_mem_resp_ready_lo)
+
+         ,.b_clk_i(clk_i)
+         ,.b_reset_i(reset_r)
+         ,.b_v_o(dma_mem_resp_v_li_2x)
+         ,.b_ready_and_i(dma_mem_resp_ready_lo_2x)
+         );
+      assign dma_mem_resp_yumi_lo = dma_mem_resp_ready_lo & dma_mem_resp_v_li;
+
       bp_me_cache_slice
        #(.bp_params_p(bp_params_p))
        l2s
-        (.clk_i(clk_i)
+        (.clk_i(clk_2x)
          ,.reset_i(reset_r)
 
          ,.mem_cmd_i(cache_mem_cmd_li)
-         ,.mem_cmd_v_i(cache_mem_cmd_v_li)
-         ,.mem_cmd_ready_o(cache_mem_cmd_ready_lo)
+         ,.mem_cmd_v_i(cache_mem_cmd_v_li_2x)
+         ,.mem_cmd_ready_o(cache_mem_cmd_ready_lo_2x)
 
          ,.mem_resp_o(cache_mem_resp_lo)
-         ,.mem_resp_v_o(cache_mem_resp_v_lo)
-         ,.mem_resp_yumi_i(cache_mem_resp_yumi_li)
+         ,.mem_resp_v_o(cache_mem_resp_v_lo_2x)
+         ,.mem_resp_yumi_i(cache_mem_resp_ready_li_2x & cache_mem_resp_v_lo_2x)
 
          ,.mem_cmd_o(dma_mem_cmd_lo)
-         ,.mem_cmd_v_o(dma_mem_cmd_v_lo)
-         ,.mem_cmd_yumi_i(dma_mem_cmd_ready_li & dma_mem_cmd_v_lo)
+         ,.mem_cmd_v_o(dma_mem_cmd_v_lo_2x)
+         ,.mem_cmd_yumi_i(dma_mem_cmd_ready_li_2x & dma_mem_cmd_v_lo_2x)
 
          ,.mem_resp_i(dma_mem_resp_li)
-         ,.mem_resp_v_i(dma_mem_resp_v_li)
-         ,.mem_resp_ready_o(dma_mem_resp_ready_lo)
+         ,.mem_resp_v_i(dma_mem_resp_v_li_2x)
+         ,.mem_resp_ready_o(dma_mem_resp_ready_lo_2x)
          );
-         assign dma_mem_resp_yumi_lo = dma_mem_resp_ready_lo & dma_mem_resp_v_li;
     end
   else
     begin : no_l2s
@@ -580,7 +650,7 @@ for (genvar i = 0; i < 2; i++)
    #(.bp_params_p(bp_params_p))
    loopback
     (.clk_i(clk_i)
-     ,.reset_i(reset_i)
+     ,.reset_i(reset_r)
 
      ,.mem_cmd_i(loopback_mem_cmd_li)
      ,.mem_cmd_v_i(loopback_mem_cmd_v_li)
